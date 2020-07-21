@@ -5,6 +5,11 @@ import sys
 HLT = 0b00000001
 LDI = 0b10000010
 PRN = 0b01000111
+MUL = 0b10100010
+PUSH = 0b01000101
+POP = 0b01000110
+'''* R7 is reserved as the stack pointer (SP)'''
+SP = 7
 
 
 class CPU:
@@ -17,6 +22,15 @@ class CPU:
         self.reg = [0] * 8
         '''Also add properties for any internal registers you need, e.g. `PC`.'''
         self.pc = 0
+        self.sp = 7
+        '''Set up the branch table'''
+        self.branchtable = {}
+        self.branchtable[HLT] = self.hlt
+        self.branchtable[LDI] = self.ldi
+        self.branchtable[PRN] = self.prn
+        self.branchtable[MUL] = self.mul
+        self.branchtable[PUSH] = self.push
+        self.branchtable[POP] = self.pop
 
     def load(self):
         """Load a program into memory."""
@@ -24,20 +38,28 @@ class CPU:
         address = 0
 
         # For now, we've just hardcoded a program:
+        try:
+            with open(sys.argv[1]) as f:
+                for line in f:
+                    try:
+                        line = line.strip()
+                        line = line.split('#', 1)[0]
+                        line = int(line, 2)
+                        self.ram[address] = line
+                        address += 1
+                    except ValueError:
+                        pass
+        except FileNotFoundError:
+            print(f"Couldn't find file {sys.argv[1]}")
+            sys.exit(1)
+        except IndexError:
+            print("Usage: ls8.py filename")
+            sys.exit(1)
+        
 
-        program = [
-            # From print8.ls8
-            0b10000010, # LDI R0,8
-            0b00000000,
-            0b00001000,
-            0b01000111, # PRN R0
-            0b00000000,
-            0b00000001, # HLT
-        ]
-
-        for instruction in program:
-            self.ram[address] = instruction
-            address += 1
+        # for instruction in program:
+        #     self.ram[address] = instruction
+        #     address += 1
 
     '''`ram_read()` should accept the address to read and return the value stored there.'''
     def ram_read(self, MAR):
@@ -51,6 +73,8 @@ class CPU:
 
         if op == "ADD":
             self.reg[reg_a] += self.reg[reg_b]
+        elif op == "MUL":
+            self.reg[reg_a] *= self.reg[reg_b]
         #elif op == "SUB": etc
         else:
             raise Exception("Unsupported ALU operation")
@@ -91,16 +115,38 @@ class CPU:
         print(self.reg[to_prn])
         self.pc += 2
     
+    def mul(self):
+        operand_a = self.ram[self.pc + 1]
+        operand_b = self.ram[self.pc + 2]
+        self.alu("MUL", operand_a, operand_b)
+        self.pc += 3
+    
+    def push(self):
+        tar_reg = self.ram[self.pc + 1]
+        '''Decrement the `SP`.'''
+        self.reg[self.sp] -= 1
+        self.ram[self.reg[self.sp]] = self.reg[tar_reg]
+        self.pc += 2
+
+    def pop(self):
+        tar_reg = self.ram[self.pc + 1]
+        self.reg[tar_reg] = self.ram[self.reg[self.sp]]
+        self.reg[self.sp] += 1
+        self.pc += 2
+    
     def run(self):
         """Run the CPU."""
         self.running = True
+
         while self.running:
             ir = self.pc
             inst = self.ram[ir]
-
-            if inst == HLT:
-                self.hlt()
-            elif inst == PRN:
-                self.prn()
-            elif inst == LDI:
-                self.ldi()
+            self.branchtable[inst]()
+            # if inst == HLT:
+            #     self.hlt()
+            # elif inst == PRN:
+            #     self.prn()
+            # elif inst == LDI:
+            #     self.ldi()
+            # elif inst == MUL:
+            #     self.mul()
